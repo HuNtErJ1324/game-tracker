@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070a10">
+  <title>Game Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2338e1ff'/><stop offset='1' stop-color='%238b5cff'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M9 21V11h6a4 4 0 0 1 0 8h-3m5 2h6' stroke='%2303141c' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><b>Game</b>Tracker</a>
+    <nav class="nav">
+      <a href="#/" data-nav="overview">Overview<span class="idx">01</span></a>
+      <a href="#/library" data-nav="library">Library<span class="idx">02</span></a>
+      <a href="#/chat" data-nav="chat">Coach<span class="idx">03</span></a>
+      <a href="#/settings" data-nav="settings">Settings<span class="idx">04</span></a>
+    </nav>
+    <span class="agent" id="agent" title="Tracker on your gaming PC"><i></i><span>Connecting</span></span>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <script src="/markdown.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

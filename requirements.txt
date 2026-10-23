@@ -1,0 +1,6 @@
+requests>=2.31
+anthropic>=1.0
+psutil>=5.9; sys_platform == "win32"
+demoparser2>=0.42; sys_platform == "win32"   # CS2 demo reading on the gaming PC
+imageio-ffmpeg>=0.5; sys_platform == "win32"  # bundled ffmpeg: cuts death frames from NVIDIA recordings on the PC
+youtube-transcript-api>=1.2   # guide captions for the knowledge base (server side)
