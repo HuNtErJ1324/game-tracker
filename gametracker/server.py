@@ -334,7 +334,7 @@ class Handler(BaseHTTPRequestHandler):
             b = self._body()
             try:
                 improve.save_frames(str(b.get("match_id") or ""), str(b.get("game_id") or ""), b.get("round"),
-                                    b.get("before") or [], b.get("images") or [])
+                                    b.get("before") or [], b.get("images") or [], b.get("report"))
             except (ValueError, TypeError) as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True})

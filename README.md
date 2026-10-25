@@ -98,7 +98,7 @@ After each match syncs, the server works out what happened at every one of your 
 Two optional sources make the facts richer:
 
 - **Your key presses** (on by default, see [Privacy](#privacy)). In VALORANT, lining your trigger pulls up with your kills gives the match clock. Then the tracker knows whether you fired in the last two seconds before a death, whether your last shot was on the move, and how you opened each fight. It also times your abilities from your C, Q, E and X presses (default binds), checks the count against Riot's own cast counts, and shows when you used each one every round, and whether you died before using any. CS2 gets its shooting facts from the demo instead.
-- **Video evidence through the NVIDIA App** (off by default). The NVIDIA App records each VALORANT match and saves an Instant Replay when you die in CS2. The PC cuts six small frames from the last five seconds before each death (the crosshair area, the minimap and the kill feed), deletes the video, and sends the frames to the server. Claude looks at them in the death reviews. They only add what the data can't show, like crosshair placement and how you peeked. The tracker talks to the NVIDIA App through its local server on 127.0.0.1, which needs the In-Game Overlay on.
+- **Video evidence through the NVIDIA App** (off by default). The NVIDIA App records each VALORANT match and saves an Instant Replay when you die in CS2. The PC cuts six small frames from the last five seconds before each death (the crosshair area, the minimap and the kill feed). For VALORANT it also crops the game's combat report from the next round's buy phase: who killed you and the damage you dealt and took per enemy. Then it deletes the video and sends the frames to the server. Claude looks at them in the death reviews. They only add what the data can't show, like crosshair placement and how you peeked. The tracker talks to the NVIDIA App through its local server on 127.0.0.1, which needs the In-Game Overlay on.
 
 ## Guides knowledge base
 
@@ -170,7 +170,7 @@ The logs stay on the gaming PC, in `data\inputs\` (one file per hour), and are d
 
 ### Video
 
-Video evidence is off until you turn it on. Then the NVIDIA App records VALORANT matches and saves CS2 Instant Replays into its own video folder. The PC cuts six frames per death and deletes the video (and any recording no match claims within 12 hours). Only the frames go to the server, which keeps them in `data/frames` for 120 days.
+Video evidence is off until you turn it on. Then the NVIDIA App records VALORANT matches and saves CS2 Instant Replays into its own video folder. The PC cuts six frames per death (plus the combat report in VALORANT) and deletes the video (and any recording no match claims within 12 hours). Only the frames go to the server, which keeps them in `data/frames` for 120 days.
 
 ### What leaves your machines
 

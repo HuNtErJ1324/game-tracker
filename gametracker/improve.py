@@ -83,12 +83,14 @@ def _frame_dir(match_id):
     return os.path.join(FRAMES_DIR, re.sub(r"[^A-Za-z0-9_.-]", "_", match_id).lstrip("."))
 
 
-def save_frames(match_id, game_id, round_n, before, images):
-    """Frames from the seconds before one death (base64 JPEGs, oldest first), sent by the PC agent."""
+def save_frames(match_id, game_id, round_n, before, images, report=None):
+    """Frames from the seconds before one death (base64 JPEGs, oldest first), and optionally the game's combat report
+    for it (VALORANT, from the next round's buy phase), sent by the PC agent."""
     if game_id not in GAMES or not isinstance(round_n, int) or not 0 <= round_n < 100 or not match_id:
         raise ValueError("bad frames")
     imgs = [base64.b64decode(x) for x in images[:8]]
-    if not imgs or any(not b.startswith(b"\xff\xd8") or len(b) > 800_000 for b in imgs):
+    rep = base64.b64decode(report) if report else None
+    if not imgs or any(not b.startswith(b"\xff\xd8") or len(b) > 800_000 for b in imgs + ([rep] if rep else [])):
         raise ValueError("frames must be JPEGs")
     d = _frame_dir(match_id)
     os.makedirs(d, exist_ok=True)
@@ -97,13 +99,20 @@ def save_frames(match_id, game_id, round_n, before, images):
     for i, b in enumerate(imgs):
         with open(os.path.join(d, f"r{round_n}_{i}.jpg"), "wb") as f:
             f.write(b)
+    rep_path = os.path.join(d, f"r{round_n}_report.jpg")
+    if rep:
+        with open(rep_path, "wb") as f:
+            f.write(rep)
+    elif os.path.exists(rep_path):
+        os.remove(rep_path)
     meta_path = os.path.join(d, "meta.json")
     try:
         with open(meta_path, encoding="utf-8") as f:
             meta = json.load(f)
     except (OSError, ValueError):
         meta = {"match_id": match_id, "game_id": game_id, "deaths": {}}
-    meta["deaths"][str(round_n)] = {"before": [float(x) for x in before][:len(imgs)], "n": len(imgs), "ts": time.time()}
+    meta["deaths"][str(round_n)] = {"before": [float(x) for x in before][:len(imgs)], "n": len(imgs), "report": bool(rep),
+                                    "ts": time.time()}
     with open(meta_path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(meta, f)
     os.replace(meta_path + ".tmp", meta_path)
@@ -113,7 +122,8 @@ def save_frames(match_id, game_id, round_n, before, images):
 
 
 def frames(match_id, paths=False):
-    """{round index: {"before": [seconds], "urls": [...]}} for the deaths of a match that have frames."""
+    """{round index: {"before": [seconds], "urls": [...], "report": url or None}} for the deaths of a match that have
+    frames ("report" is the game's combat report from the next round's buy phase)."""
     d = _frame_dir(match_id or "")
     try:
         with open(os.path.join(d, "meta.json"), encoding="utf-8") as f:
@@ -123,9 +133,11 @@ def frames(match_id, paths=False):
     out, safe = {}, os.path.basename(d)
     for rn, info in meta.get("deaths", {}).items():
         n = int(info.get("n") or 0)
-        out[int(rn)] = {"before": info.get("before") or [], "urls": [f"/api/frames/{safe}/r{rn}_{i}.jpg" for i in range(n)]}
+        out[int(rn)] = {"before": info.get("before") or [], "urls": [f"/api/frames/{safe}/r{rn}_{i}.jpg" for i in range(n)],
+                        "report": f"/api/frames/{safe}/r{rn}_report.jpg" if info.get("report") else None}
         if paths:
             out[int(rn)]["paths"] = [os.path.join(d, f"r{rn}_{i}.jpg") for i in range(n)]
+            out[int(rn)]["report_path"] = os.path.join(d, f"r{rn}_report.jpg") if info.get("report") else None
     return out
 
 
@@ -135,7 +147,7 @@ def frames_for(m, paths=False):
 
 
 def frame_file(folder, name):
-    if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", folder) or not re.fullmatch(r"r\d+_\d+\.jpg", name):
+    if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", folder) or not re.fullmatch(r"r\d+_(\d+|report)\.jpg", name):
         return None
     p = os.path.join(FRAMES_DIR, folder, name)
     return p if os.path.isfile(p) else None
@@ -279,6 +291,9 @@ have?). Tag "crosshair_placement" when the crosshair was clearly low or off the 
 "wide_peek" when they swung wide or ran into an angle without information. In "video", say in one sentence (max 22
 words) what the frames show that matters; leave it empty for deaths without frames. Frames can be mid-flick or
 blurry: only describe what you can actually see.
+Some deaths also come with the game's own combat report, captured during the next round's buy phase: who killed them,
+and per enemy the damage the player dealt (outgoing, left) and took (incoming, right) with head, body and leg hits.
+Its numbers come from the game, like the facts: use them (e.g. dealt 0 damage before dying, took a headshot).
 The frames only add to the facts; they never override them. The facts (positions, distances, who was alive, timing,
 what the player's inputs did) come from the game's own data and are exact. A frame can't measure distance: field of
 view, zoom, crops and blur all distort it. If a frame seems to disagree with a fact, the fact is right: describe only
@@ -364,7 +379,7 @@ def review_match(gid, m):
     act = [HABIT[f["habit"]]["label"] for f in focus(gid)]
     fr = frames_for(m, paths=True)
     with_video = [r for r in rows if fr.get(r["n"])]
-    per = min(6, MAX_IMAGES // len(with_video)) if with_video else 0
+    slots = MAX_IMAGES // len(with_video) if with_video else 0  # images per death; a combat report takes one
     system = REVIEW_SYSTEM.format(
         game=game, tag_help="; ".join(f"{h['id']}: {h['means']}" for h in HABITS),
         focus=("Current focus: " + ", ".join(act)) if act else "No focus habits chosen yet.",
@@ -374,14 +389,18 @@ def review_match(gid, m):
             f"{m.get('rounds_won')}-{m.get('rounds_lost')}, {m.get('kills')}/{m.get('deaths')}/{m.get('assists')}.")
     content = [{"type": "text", "text": head + "\n\nDeaths:"}]
     for r in rows:
-        line, f = f"- {_death_line(m, r)}", fr.get(r["n"]) if per else None
+        line, f = f"- {_death_line(m, r)}", fr.get(r["n"]) if slots else None
+        rep = f.get("report_path") if f and slots > 1 and f.get("report_path") and os.path.exists(f["report_path"]) else None
+        per = min(6, slots - (1 if rep else 0))
         keep = [i for i in range(len(f["paths"])) if os.path.exists(f["paths"][i])][-per:] if f else []
         if keep:
             secs = ", ".join(f"{f['before'][i]:g}" if i < len(f["before"]) else "?" for i in keep)
             line += f"\n  Video frames from {secs} seconds before the death:"
         content.append({"type": "text", "text": line})
-        for i in keep:
-            with open(f["paths"][i], "rb") as fh:
+        for p in [f["paths"][i] for i in keep] + ([rep] if rep else []):
+            if p == rep:
+                content.append({"type": "text", "text": "  The game's combat report for this death (next round's buy phase):"})
+            with open(p, "rb") as fh:
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                             "data": base64.standard_b64encode(fh.read()).decode()}})
     client = anthropic.Anthropic(api_key=key)

@@ -6,8 +6,8 @@ The NVIDIA App runs a local MCP server (127.0.0.1:13508, loopback only, needs th
   up your kills with your clicks gives (inputs.align).
 - CS2: an Instant Replay is saved the moment Game State Integration shows you died.
 
-From each death the tracker keeps six small frames, cropped to the crosshair area, the minimap and the kill feed, and
-deletes the video. Only those frames leave the PC. Nothing here reads game memory or sends input to a game.
+From each death the tracker keeps six small frames, cropped to the crosshair area, the minimap and the kill feed, plus
+(VALORANT) the combat report as it shows during the next round's buy phase, and deletes the video. Only those frames leave the PC. Nothing here reads game memory or sends input to a game.
 """
 import base64
 import collections
@@ -43,10 +43,13 @@ CS2_MODES = {"competitive", "premier", "scrimcomp2v2", "casual"}
 # HUD regions in units of the frame height (the HUD scales with height and hugs the corners, so this holds for
 # 16:9, 16:10 and ultrawide): (edge, distance from that edge, top, width, height).
 LAYOUT = {  # VALORANT checked against a real 1440p recording; CS2 not yet
-    VALORANT: {"minimap": ("left", 0.0, 0.0, 0.46, 0.47), "feed": ("right", 0.52, 0.075, 0.52, 0.19)},
+    VALORANT: {"minimap": ("left", 0.0, 0.0, 0.46, 0.47), "feed": ("right", 0.52, 0.075, 0.52, 0.19),
+               "report": ("right", 0.39, 0.14, 0.39, 0.72)},  # combat report: centred on the screen, grows both ways
     CS2: {"minimap": ("left", 0.0, 0.0, 0.34, 0.34), "feed": ("right", 0.52, 0.06, 0.52, 0.22)},
 }
 OUT_W, TOP_H, ROW_H = 768, 432, 220  # crosshair area on top (768x432), minimap and kill feed side by side below
+REPORT_H = 800       # the combat report crop is scaled to this height (hit counts stay readable)
+REPORT_LEAD = 25.0   # grab it this long before the next round's barriers drop: a few seconds into its buy phase
 
 _instance = None
 _outbox_lock = threading.Lock()
@@ -203,13 +206,17 @@ def _even(v, low=2):
     return max(low, int(v) // 2 * 2)
 
 
+def _crop(spec, w, h):
+    """A LAYOUT region as pixels (w, h, x, y) for a w x h video."""
+    edge, x, y, cw, ch = spec
+    cw, ch = min(cw * h, w), min(ch * h, h - y * h)
+    left = x * h if edge == "left" else w - x * h
+    return _even(cw), _even(ch), _even(max(0, min(left, w - cw)), 0), _even(y * h, 0)
+
+
 def regions(game, w, h):
     """Pixel crops (w, h, x, y) for the crosshair area, minimap and kill feed, and the scaled row sizes below."""
-    def crop(spec):
-        edge, x, y, cw, ch = spec
-        cw, ch = min(cw * h, w), min(ch * h, h)
-        left = x * h if edge == "left" else w - x * h
-        return _even(cw), _even(ch), _even(max(0, min(left, w - cw)), 0), _even(y * h, 0)
+    crop = lambda spec: _crop(spec, w, h)
     ch = _even(h * 0.5)
     cw = _even(min(w, ch * 16 / 9))
     center = (cw, ch, _even((w - cw) / 2, 0), _even((h - ch) / 2, 0))
@@ -241,6 +248,21 @@ def extract(path, times, game, out_dir):
     if res.returncode != 0:
         print(f"[capture] ffmpeg: {res.stderr.strip()[-300:]}")
     return [o if os.path.exists(o) and os.path.getsize(o) > 0 else None for o in outs]
+
+
+def extract_report(path, t, game, out):
+    """The combat report panel t seconds into the video as one JPEG at out, or None (no layout, or ffmpeg failed)."""
+    spec = LAYOUT[game].get("report")
+    if not spec:
+        return None
+    dur, (w, h) = probe(path)
+    cw, ch, cx, cy = _crop(spec, w, h)
+    res = _run([ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{max(0.0, min(t, dur - 0.1)):.3f}",
+                "-i", path, "-vf", f"crop={cw}:{ch}:{cx}:{cy},scale=-2:{min(REPORT_H, ch)}", "-frames:v", "1",
+                "-q:v", "4", "-update", "1", out], 120)
+    if res.returncode != 0:
+        print(f"[capture] ffmpeg (combat report): {res.stderr.strip()[-300:]}")
+    return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
 
 
 def _ready(path):
@@ -308,14 +330,16 @@ def _write_json(path, data):
     os.replace(tmp, path)
 
 
-def outbox_put(match_id, game_id, round_n, before, jpgs):
+def outbox_put(match_id, game_id, round_n, before, jpgs, report=None):
     d = os.path.join(OUTBOX, _safe(match_id))
     with _outbox_lock:
         os.makedirs(d, exist_ok=True)
         for i, p in enumerate(jpgs):
             shutil.move(p, os.path.join(d, f"r{round_n}_{i}.jpg"))
+        if report:
+            shutil.move(report, os.path.join(d, f"r{round_n}_report.jpg"))
         meta = _read_json(os.path.join(d, "meta.json"), {"match_id": match_id, "game_id": game_id, "deaths": {}})
-        meta["deaths"][str(round_n)] = {"before": list(before), "n": len(jpgs), "ts": time.time()}
+        meta["deaths"][str(round_n)] = {"before": list(before), "n": len(jpgs), "report": bool(report), "ts": time.time()}
         _write_json(os.path.join(d, "meta.json"), meta)
 
 
@@ -336,18 +360,25 @@ def upload_pending(post):
                 continue
             for rn, info in list(meta["deaths"].items()):
                 files = [os.path.join(d, f"r{rn}_{i}.jpg") for i in range(info["n"])]
-                images = []
+                images, report = [], None
                 for p in files:
                     try:
                         with open(p, "rb") as f:
                             images.append(base64.b64encode(f.read()).decode())
                     except OSError:
                         pass
+                if info.get("report"):
+                    files.append(os.path.join(d, f"r{rn}_report.jpg"))
+                    try:
+                        with open(files[-1], "rb") as f:
+                            report = base64.b64encode(f.read()).decode()
+                    except OSError:
+                        pass
                 if images:
                     try:
                         post({"match_id": meta["match_id"], "game_id": meta["game_id"], "round": int(rn),
                               "before": info["before"][-len(images):] if len(images) < len(info["before"]) else info["before"],
-                              "images": images})
+                              "images": images, **({"report": report} if report else {})})
                         sent += 1
                     except requests.HTTPError as e:  # the server refused these frames: drop them, don't block the rest
                         code = e.response.status_code if e.response is not None else 0
@@ -544,19 +575,23 @@ class Capture:
                     shutil.rmtree(e.path, ignore_errors=True)
         self._save()
 
-    def _frames(self, path, game, match_id, round_n, times):
+    def _frames(self, path, game, match_id, round_n, times, report_t=None):
+        """Cut a death's frames (and its combat report, at report_t seconds into the video) into the outbox.
+        Returns (frames cut, whether the report was)."""
         with tempfile.TemporaryDirectory(dir=CAPTURE_DIR) as tmp:
             outs = extract(path, times, game, tmp)
             got = [(b, p) for b, p in zip(BEFORE, outs) if p]
+            report = extract_report(path, report_t, game, os.path.join(tmp, "report.jpg")) if report_t is not None else None
             if got:
-                outbox_put(match_id, game, round_n, [b for b, _ in got], [p for _, p in got])
-            return len(got)
+                outbox_put(match_id, game, round_n, [b for b, _ in got], [p for _, p in got], report)
+            return len(got), bool(got and report)
 
     # -- VALORANT: called from the match sync --
-    def attach_match(self, game, match_id, t0, t1, deaths):
+    def attach_match(self, game, match_id, t0, t1, deaths, reports=None):
         """Cut frames for a synced match's deaths from its recording, then delete the recording.
 
         deaths: [(round index, PC time of death)], or None when the match couldn't be lined up with the PC clock.
+        reports: {round index: PC time to grab that death's combat report} (in the next round's buy phase).
         Returns a small summary for the match record, {"status": "pending"} while its recording is still being saved,
         or None when no recording covers the match."""
         rec = self.state.get("rec")
@@ -569,18 +604,21 @@ class Capture:
         if not clips:
             return None
         clip = max(clips, key=overlap)
-        n = 0
+        n = nrep = 0
         if deaths is None:
             self._event("A recorded VALORANT match couldn't be lined up with the PC clock (too few kills or no "
                         "input data), so no frames were cut")
         else:
             for rn, t in deaths:
                 if clip["start"] + BEFORE[0] <= t <= clip["end"]:
+                    rt = (reports or {}).get(rn)
+                    rt = rt - clip["start"] if rt is not None and clip["start"] <= rt <= clip["end"] else None
                     try:
-                        n += bool(self._frames(clip["path"], game, match_id, rn, [t - b - clip["start"] for b in BEFORE]))
+                        got, rep = self._frames(clip["path"], game, match_id, rn, [t - b - clip["start"] for b in BEFORE], rt)
+                        n, nrep = n + bool(got), nrep + rep
                     except Exception as e:
                         print(f"[capture] frames for round {rn + 1} failed: {type(e).__name__}: {e}")
-            self._event(f"VALORANT: frames for {n} of {len(deaths)} deaths; recording deleted")
+            self._event(f"VALORANT: frames for {n} of {len(deaths)} deaths, {nrep} with the combat report; recording deleted")
         _delete_video(clip["path"])
         self.state["clips"] = [c for c in self.state["clips"] if c is not clip]
         self._save()
@@ -615,7 +653,7 @@ class Capture:
         try:
             dur, _ = probe(path)
             death = dur - (job["t_req"] - job["t"])  # the replay ends when it was saved
-            n = self._frames(path, CS2, job["match_id"], job["round"], [death - b for b in BEFORE]) if death > 1 else 0
+            n = self._frames(path, CS2, job["match_id"], job["round"], [death - b for b in BEFORE])[0] if death > 1 else 0
             self._event(f"CS2 round {job['round'] + 1}: {n} frames saved; replay deleted")
         finally:
             _delete_video(path)

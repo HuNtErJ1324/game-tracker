@@ -1229,9 +1229,12 @@ const pct = (v) => (v == null ? "–" : `${Math.round(v)}%`);
 // Video frames from the seconds before a death: a strip of thumbnails that opens a larger view.
 function framesHtml(fr, label) {
   if (!fr || !(fr.urls || []).length) return "";
-  const before = (i) => (fr.before[i] != null ? `${fr.before[i]} s before` : "");
-  return `<div class="frames" data-frames="${esc(JSON.stringify(fr))}" data-label="${esc(label)}" role="group" aria-label="${esc(label)}: video frames before the death">
-    ${fr.urls.map((u, i) => `<button type="button" data-i="${i}" aria-label="Open frame ${i + 1}, ${esc(before(i))}"><img src="${esc(u)}" alt="" loading="lazy">${fr.before[i] != null ? `<span>-${esc(fr.before[i])}s</span>` : ""}</button>`).join("")}</div>`;
+  // the frames before the death, then the combat report from the next round's buy phase
+  const items = fr.urls.map((u, i) => ({ u, tag: fr.before[i] != null ? `-${fr.before[i]}s` : "", cap: fr.before[i] != null ? `${fr.before[i]} s before the death` : "" }));
+  if (fr.report) items.push({ u: fr.report, tag: "report", cap: "combat report, next round's buy phase", report: true });
+  const data = { urls: items.map((x) => x.u), caps: items.map((x) => x.cap) };
+  return `<div class="frames" data-frames="${esc(JSON.stringify(data))}" data-label="${esc(label)}" role="group" aria-label="${esc(label)}: video frames before the death">
+    ${items.map((x, i) => `<button type="button" data-i="${i}"${x.report ? ' class="report"' : ""} aria-label="Open ${x.report ? "the combat report" : `frame ${i + 1}`}, ${esc(x.cap)}"><img src="${esc(x.u)}" alt="" loading="lazy">${x.tag ? `<span>${esc(x.tag)}</span>` : ""}</button>`).join("")}</div>`;
 }
 
 const frameBox = { fr: null, i: 0, label: "" };
@@ -1240,7 +1243,7 @@ function showFrame(i) {
   frameBox.i = Math.max(0, Math.min(fr.urls.length - 1, i));
   box.querySelector("img").src = fr.urls[frameBox.i];
   box.querySelector("img").alt = `${frameBox.label}, frame ${frameBox.i + 1}`;
-  box.querySelector(".fbx-cap").textContent = `${frameBox.label} · ${fr.before[frameBox.i] != null ? `${fr.before[frameBox.i]} s before the death` : ""} · ${frameBox.i + 1}/${fr.urls.length}`;
+  box.querySelector(".fbx-cap").textContent = `${frameBox.label} · ${fr.caps[frameBox.i] || ""} · ${frameBox.i + 1}/${fr.urls.length}`;
   box.querySelector("[data-step='-1']").disabled = frameBox.i === 0;
   box.querySelector("[data-step='1']").disabled = frameBox.i === fr.urls.length - 1;
 }

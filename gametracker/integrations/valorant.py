@@ -326,6 +326,9 @@ def summarize(d, puuid, rr_info, content, names=None):
         "rounds": extract_rounds(d, puuid, mapinfo, content) if is_rounds else [],
         "scoreboard": _scoreboard(d, puuid, content, rounds, is_rounds, names),
     }
+    for n, gt0 in _round_starts(d).items():  # when each round's barriers dropped (game time, ms)
+        if 0 <= n < len(s["rounds"]) and s["rounds"][n]["n"] == n:
+            s["rounds"][n]["gt0"] = gt0
     _add_inputs(s, d, puuid, agent.get("abilities") or {}, st.get("abilityCasts"))
     _add_video(s)
     return s
@@ -345,7 +348,11 @@ def _add_video(s):
     t0 = s["start"]
     deaths = None if off is None else [(r["n"], t0 + r["death"]["gt"] / 1000 + off) for r in s["rounds"]
                                        if r.get("death") and r["death"].get("gt") is not None]
-    video = cap.attach_match(GAME_ID, f"val:{s['match_id']}", t0, t0 + (s["length_sec"] or 0), deaths)
+    # each death's combat report, as it shows a few seconds into the next round's buy phase
+    gt0 = {r["n"]: r.get("gt0") for r in s["rounds"]}
+    reports = None if off is None else {r["n"]: t0 + (gt0[r["n"] + 1] / 1000 - capture.REPORT_LEAD) + off
+                                        for r in s["rounds"] if r.get("death") and gt0.get(r["n"] + 1) is not None}
+    video = cap.attach_match(GAME_ID, f"val:{s['match_id']}", t0, t0 + (s["length_sec"] or 0), deaths, reports)
     if video:
         s["video"] = video
 

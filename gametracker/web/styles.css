@@ -610,3 +610,7 @@ td.hab span { color: var(--muted); font-size: 0.76rem; }
 
 /* a key cap, e.g. the C/Q/E/X of an ability */
 .kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font: 0.66rem var(--mono); text-align: center; color: var(--text-2); }
+
+/* the combat report after a death's frames: a narrower last column, portrait image fitted inside */
+.frames:has(> .report) { grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(0, 0.75fr); max-width: 800px; }
+.frames button.report img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }

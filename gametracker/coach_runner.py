@@ -81,7 +81,10 @@ to: only when you judge it right for this player.
 ## Death frames
 `frames/` holds still frames from the seconds before some deaths (when the player had video evidence on), read-only:
 `frames/<match id with ":" as "_">/r<round index>_<i>.jpg`, where the round index is `rounds[].n` (R1 is 0) and
-`meta.json` there gives `deaths.<round index>.before`, the seconds before the death of each frame. Look at them with
+`meta.json` there gives `deaths.<round index>.before`, the seconds before the death of each frame. VALORANT deaths can
+also have `r<round index>_report.jpg`: the game's combat report from the next round's buy phase (who killed them, and
+per enemy the damage dealt and taken with head/body/leg hits); its numbers are game data like the match data. Look at
+them with
 `await attach_image("frames/val_.../r3_0.jpg", ...)` (it's async) when a question is about how a death happened:
 crosshair placement, how they peeked, utility on screen. Each image costs tokens, so open the deaths that matter,
 not every frame of every death.

@@ -203,7 +203,7 @@ def ask(game, preset="auto", question="", spoiler=None, match_id=None, gen=None,
                 if fr:
                     folder = re.sub(r"[^A-Za-z0-9_.-]", "_", match_id).lstrip(".")
                     context += (f"\n\nVideo frames from the seconds before these deaths are in your workspace under "
-                                f"frames/{folder}/ (see AGENTS.md): " + ", ".join(f"R{n + 1} (r{n}_0..{len(v['urls']) - 1}.jpg)"
+                                f"frames/{folder}/ (see AGENTS.md): " + ", ".join(f"R{n + 1} (r{n}_0..{len(v['urls']) - 1}.jpg" + (f", combat report r{n}_report.jpg" if v.get("report") else "") + ")"
                                                                                 for n, v in sorted(fr.items()))
                                 + ". They only supplement the match data above, which is exact; they never override it.")
         prompt = f"<tracker_data>\n{context}\n</tracker_data>\n\n{SPOILER_RULES[spoiler]}\n\n{q}"
