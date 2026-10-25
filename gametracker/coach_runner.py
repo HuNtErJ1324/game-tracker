@@ -125,11 +125,17 @@ def _save_thread(key, session_id):
 
 
 # prime-agent treats these as text-only unless told otherwise, so attach_image would refuse the death frames.
+# `cost` is dollars per million tokens (cache writes at the 5-minute rate); without it prime-agent records every
+# run as free. Haiku's cache prices assume the usual 0.1x read / 1.25x write, and its long-prompt rate isn't modeled.
 VISION_MODELS = [
-    {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "contextWindow": 1000000, "maxTokens": 128000},
-    {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "contextWindow": 1000000, "maxTokens": 128000},
-    {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "contextWindow": 1000000, "maxTokens": 128000},
-    {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5", "contextWindow": 200000, "maxTokens": 64000},
+    {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "contextWindow": 1000000, "maxTokens": 128000,
+     "cost": {"input": 2, "output": 10, "cacheRead": 0.2, "cacheWrite": 2.5}},
+    {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "contextWindow": 1000000, "maxTokens": 128000,
+     "cost": {"input": 4, "output": 20, "cacheRead": 0.2, "cacheWrite": 5}},
+    {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "contextWindow": 1000000, "maxTokens": 128000,
+     "cost": {"input": 10, "output": 50, "cacheRead": 0.25, "cacheWrite": 12.5}},
+    {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5", "contextWindow": 200000, "maxTokens": 64000,
+     "cost": {"input": 0.1, "output": 0.5, "cacheRead": 0.01, "cacheWrite": 0.125}},
 ]
 FRAMES = os.environ.get("COACH_FRAMES")  # without Docker: the tracker's frames folder, linked into the workspace
 
